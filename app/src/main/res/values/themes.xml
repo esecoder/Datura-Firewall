@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.Firewall" parent="Theme.AppCompat.DayNight">
+        <item name="colorAccent">@color/color_accent</item>
+    </style>
+
+    <style name="Theme.Firewall.NoActionBar" parent="Theme.Firewall">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+</resources>

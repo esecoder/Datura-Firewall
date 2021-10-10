@@ -1,0 +1,74 @@
+plugins {
+    id 'com.android.application'
+}
+
+def gitDescribe = { ->
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine 'git', 'describe', '--always', '--tags', '--dirty=-dirty'
+        standardOutput = stdout
+    }
+    return stdout.toString().trim()
+}
+
+android {
+    compileSdkVersion 30
+    buildToolsVersion "30.0.2"
+
+    defaultConfig {
+        applicationId "org.calyxos.datura"
+        minSdkVersion 30
+        targetSdkVersion 30
+        versionNameSuffix "-$gitDescribe"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        aosp {
+            // Generated from the AOSP platform key:
+            // https://android.googlesource.com/platform/build/+/refs/tags/android-11.0.0_r29/target/product/security/platform.pk8
+            keyAlias "platform"
+            keyPassword "platform"
+            storeFile file("platform.jks")
+            storePassword "platform"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.aosp
+        }
+        debug {
+            signingConfig signingConfigs.aosp
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
+
+apply from: '../gradle/dependencies.gradle'
+
+gradle.projectsEvaluated {
+    tasks.withType(JavaCompile) {
+        if (JavaVersion.current() >= JavaVersion.VERSION_1_9) {
+            options.compilerArgs.addAll(['--release', '8'])
+        }
+        options.compilerArgs.add('-Xbootclasspath/p:app/libs/android.jar:app/libs/libcore.jar')
+    }
+}
+
+configurations {
+    all {
+        resolutionStrategy {
+            failOnNonReproducibleResolution()
+        }
+    }
+}
