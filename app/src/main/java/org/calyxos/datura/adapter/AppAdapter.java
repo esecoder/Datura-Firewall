@@ -208,7 +208,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         instApps.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -221,7 +221,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         sysApps.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -243,7 +243,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         mAppsFiltered.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -358,7 +358,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
             appName = itemView.findViewById(R.id.app_name);
             settingStatus = itemView.findViewById(R.id.setting_status);
             appIcon = itemView.findViewById(R.id.app_icon);
-            accordionIcon = itemView.findViewById(R.id.default_config_accordion_icon);
+            accordionIcon = itemView.findViewById(R.id.accordion_icon);
 
             mAccordion = itemView.findViewById(R.id.accordion);
             header = itemView.findViewById(R.id.list_header_text);
@@ -430,11 +430,16 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
                 mMainToggle.setChecked(!mSettingsManager.getAppRestrictAll(app.uid));
 
                 //initialize cleartext toggle
-                mClrTextToggle.setEnabled(mSettingsManager.isCleartextBlocked());
-                try {
-                    mClrTextToggle.setChecked(mSettingsManager.getAppRestrictCleartext(app.uid));
-                } catch (RemoteException e) {
-                    e.printStackTrace();
+                if(mSettingsManager.isCleartextTrafficPermitted(app.packageName)) {
+                    mClrTextToggle.setEnabled(mSettingsManager.isCleartextBlocked());
+                    try {
+                        mClrTextToggle.setChecked(mSettingsManager.getAppRestrictCleartext(app.uid));
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    //disable permanently
+                    mClrTextToggle.setEnabled(false);
                 }
 
                 // Set status text
@@ -444,7 +449,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
 
         @Override
         public void onClick(View v) {
-            if (v.equals(itemView) || v.getId() == R.id.default_config_accordion_icon) {
+            if (v.equals(itemView) || v.getId() == R.id.accordion_icon) {
                 if (mLinearLayout.getVisibility() == View.VISIBLE) {
                     mLinearLayout.setVisibility(View.GONE);
                     accordionIcon.setImageDrawable(mContext.getResources().getDrawable(R.drawable.ic_accordion_down, null));

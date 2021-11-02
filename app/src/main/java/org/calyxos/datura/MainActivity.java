@@ -1,15 +1,19 @@
 package org.calyxos.datura;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -27,7 +31,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.calyxos.datura.adapter.AppAdapter;
 import org.calyxos.datura.adapter.GlobalSettingsAdapter;
 import org.calyxos.datura.fragment.AboutDialogFragment;
+import org.calyxos.datura.service.DefaultConfigService;
 import org.calyxos.datura.settings.SettingsManager;
+import org.calyxos.datura.util.Constants;
 import org.calyxos.datura.util.Util;
 
 import java.util.ArrayList;
@@ -43,9 +49,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
 
-    private SwitchCompat mCleartextToggle;
-    private SettingsManager mSettingsManager;
     private static MainActivity mainActivity;
+
+
+    public void startDefaultConfigService () {
+        Log.d(TAG, "Service about to be started");
+        Intent serviceIntent = new Intent(MainActivity.this, DefaultConfigService.class);
+        startForegroundService(serviceIntent);
+    }
+
+    public void stopDefaultConfigService() {
+        stopService(new Intent(this, DefaultConfigService.class));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,12 +99,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear = findViewById(R.id.search_clear);
         mSearchClear.setOnClickListener(this);
 
-        mCleartextToggle = findViewById(R.id.global_cleartext_toggle);
-        mCleartextToggle.setOnClickListener(this);
-
         mAppList = findViewById(R.id.app_list);
-
-        mSettingsManager = new SettingsManager(this);
 
         mainActivity = this;
     }
