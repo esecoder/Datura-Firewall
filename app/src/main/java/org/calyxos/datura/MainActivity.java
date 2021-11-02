@@ -1,15 +1,21 @@
 package org.calyxos.datura;
 
+import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -19,7 +25,6 @@ import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.ConcatAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -27,7 +32,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.calyxos.datura.adapter.AppAdapter;
 import org.calyxos.datura.adapter.GlobalSettingsAdapter;
 import org.calyxos.datura.fragment.AboutDialogFragment;
-import org.calyxos.datura.settings.SettingsManager;
+import org.calyxos.datura.service.DefaultConfigService;
+import org.calyxos.datura.util.Constants;
 import org.calyxos.datura.util.Util;
 
 import java.util.ArrayList;
@@ -43,8 +49,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
 
-    private SwitchCompat mCleartextToggle;
-    private SettingsManager mSettingsManager;
     private static MainActivity mainActivity;
 
     @Override
@@ -84,12 +88,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear = findViewById(R.id.search_clear);
         mSearchClear.setOnClickListener(this);
 
-        mCleartextToggle = findViewById(R.id.global_cleartext_toggle);
-        mCleartextToggle.setOnClickListener(this);
-
         mAppList = findViewById(R.id.app_list);
-
-        mSettingsManager = new SettingsManager(this);
 
         mainActivity = this;
     }
@@ -111,6 +110,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             packages.addAll(pm.getInstalledApplicationsAsUser(PackageManager.GET_META_DATA, user.id));
         }
 
+        //filter out packages without internet access permissions
+        List<ApplicationInfo> internetPackages = new ArrayList<>();
+        for (ApplicationInfo applicationInfo : packages) {
+            if (isSystemApp(applicationInfo)) {
+                try {
+                    PackageInfo packageInfo = pm.getPackageInfo(applicationInfo.packageName, PackageManager.GET_META_DATA | PackageManager.GET_PERMISSIONS);
+                    if (packageInfo.requestedPermissions != null && hasInternetPermission(packageInfo.requestedPermissions)) {
+                        internetPackages.add(applicationInfo);
+                    }
+                } catch (PackageManager.NameNotFoundException ignored) {
+                }
+            }
+        }
+
+        packages = internetPackages;
+
         //filter system and installed apps
         List<ApplicationInfo> sysApps = new ArrayList<>();
         List<ApplicationInfo> instApps = new ArrayList<>();
@@ -119,7 +134,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             // Skip anything that isn't an "app" since we can't set policies for those, as
             // the framework code which handles setting the policies has a similar check.
             if (Util.isApp(ai.uid)) {
-                if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+                if (isSystemApp(ai)) {
                     sysApps.add(ai);
                 } else {
                     instApps.add(ai);
@@ -157,7 +172,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     //remove virtual keypad
                     //mSearchIcon.requestFocus();
-                    InputMethodManager imm =(InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     imm.hideSoftInputFromWindow(mSearchIcon.getWindowToken(), 0);
                 } else
                     onBackPressed();
@@ -182,7 +197,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 break;
             }
-            
+
             case R.id.action_about: {
                 new AboutDialogFragment().show(getSupportFragmentManager(), AboutDialogFragment.TAG);
                 break;
@@ -218,6 +233,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+    private boolean isSystemApp(ApplicationInfo ai) {
+        return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+    }
+
+    private boolean hasInternetPermission(String[] permissions) {
+        for (String s : permissions) {
+            if (s.equalsIgnoreCase(Manifest.permission.INTERNET))
+                return true;
+        }
+        return false;
+    }
+
     public static MainActivity getInstance() {
         return mainActivity;
     }
@@ -225,5 +252,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void notifyDataSetChanged() {
         if (mAppAdapter != null)
             mAppAdapter.notifyDataSetChanged(); //NOTE include this in a thread/service as well
+    }
+
+    public GlobalSettingsAdapter getGlobalSettingsAdapter() {
+        return mGlobalSettingsAdapter;
     }
 }
