@@ -1,14 +1,19 @@
 package org.calyxos.datura;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -18,10 +23,18 @@ import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
+import androidx.recyclerview.widget.ConcatAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.calyxos.datura.adapter.AppAdapter;
+import org.calyxos.datura.adapter.GlobalSettingsAdapter;
+import org.calyxos.datura.fragment.AboutDialogFragment;
+import org.calyxos.datura.service.DefaultConfigService;
+import org.calyxos.datura.settings.SettingsManager;
+import org.calyxos.datura.util.Constants;
+import org.calyxos.datura.util.Util;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,8 +45,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private RecyclerView mAppList;
     private AppAdapter mAppAdapter;
+    private GlobalSettingsAdapter mGlobalSettingsAdapter;
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
+
+    private static MainActivity mainActivity;
+
+
+    public void startDefaultConfigService () {
+        Log.d(TAG, "Service about to be started");
+        Intent serviceIntent = new Intent(MainActivity.this, DefaultConfigService.class);
+        startService(serviceIntent);
+    }
+
+    public void stopDefaultConfigService() {
+        stopService(new Intent(this, DefaultConfigService.class));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +100,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear.setOnClickListener(this);
 
         mAppList = findViewById(R.id.app_list);
+
+        mainActivity = this;
     }
 
     @Override
@@ -99,7 +128,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         for (ApplicationInfo ai : packages) {
             // Skip anything that isn't an "app" since we can't set policies for those, as
             // the framework code which handles setting the policies has a similar check.
-            if (UserHandle.isApp(ai.uid)) {
+            if (Util.isApp(ai.uid)) {
                 if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
                     sysApps.add(ai);
                 } else {
@@ -110,7 +139,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         if (mAppAdapter == null) {
             mAppAdapter = new AppAdapter(this, pm, instApps, sysApps);
-            mAppList.setAdapter(mAppAdapter);
+            mGlobalSettingsAdapter = new GlobalSettingsAdapter(this, pm);
+            ConcatAdapter concatAdapter = new ConcatAdapter(mGlobalSettingsAdapter, mAppAdapter);
+            mAppList.setAdapter(concatAdapter);
         } else
             mAppAdapter.notifyDataSetChanged();
     }
@@ -161,23 +192,48 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 break;
             }
+            
+            case R.id.action_about: {
+                new AboutDialogFragment().show(getSupportFragmentManager(), AboutDialogFragment.TAG);
+                break;
+            }
+
+            case R.id.action_advanced: {
+                startActivity(new Intent(this, GlobalSettingsActivity.class));
+                break;
+            }
         }
         return true;
     }
 
     @Override
     public void onClick(View v) {
-        if (v.getId() == R.id.search_icon) {
-            mSearchIcon.setVisibility(View.GONE);
-            mSearchBar.setVisibility(View.VISIBLE);
-            mSearchBar.requestFocus();
+        switch (v.getId()) {
 
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            imm.showSoftInput(mSearchBar, InputMethodManager.SHOW_IMPLICIT);
-        }
+            case R.id.search_icon: {
+                mSearchIcon.setVisibility(View.GONE);
+                mSearchBar.setVisibility(View.VISIBLE);
+                mSearchBar.requestFocus();
 
-        if (v.getId() == R.id.search_clear) {
-            mSearchBar.setText("");
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.showSoftInput(mSearchBar, InputMethodManager.SHOW_IMPLICIT);
+
+                break;
+            }
+
+            case R.id.search_clear: {
+                mSearchBar.setText("");
+                break;
+            }
         }
+    }
+
+    public static MainActivity getInstance() {
+        return mainActivity;
+    }
+
+    public void notifyDataSetChanged() {
+        if (mAppAdapter != null)
+            mAppAdapter.notifyDataSetChanged(); //NOTE include this in a thread/service as well
     }
 }

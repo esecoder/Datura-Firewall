@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.text.Html;
 import android.util.Log;
@@ -48,7 +49,8 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         mInstApps = instApps;
         mSysApps = sysApps;
 
-        //add a placeholder for header text
+        //add a placeholder for header text. This placeholder helps indicate that this is a header not an app.
+        //also helps to prevent a crash when calling system settings on the apps.
         ApplicationInfo ai = new ApplicationInfo();
         ai.processName = "Header1";
         instApps.add(0, ai);
@@ -206,7 +208,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         instApps.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -219,7 +221,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         sysApps.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -241,7 +243,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         mAppsFiltered.sort(new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo lhs, ApplicationInfo rhs) {
-                return lhs.loadLabel(mPackageManager).toString().compareToIgnoreCase(rhs.loadLabel(mPackageManager).toString());
+                return lhs.loadLabel(mPackageManager).toString().compareTo(rhs.loadLabel(mPackageManager).toString());
             }
         });
 
@@ -254,6 +256,52 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         if (currentSort.equals("name"))
             sortListByName();
         else sortListByLastUsed();
+    }
+
+    public void allowAllNetworkAccess(boolean checked) {
+        mSettingsManager.allowAppsNetworkAccess(mAppsFiltered, checked);
+
+        notifyDataSetChanged();
+    }
+
+    public void allowAllBackgroundData(boolean checked) {
+        mSettingsManager.allowAppsBackgroundData(mAppsFiltered, checked);
+
+        notifyDataSetChanged();
+    }
+
+    public void allowAllWIFIData(boolean checked) {
+        mSettingsManager.allowAppsWIFIData(mAppsFiltered, checked);
+
+        notifyDataSetChanged();
+    }
+
+    public void allowAllMobileData(boolean checked) {
+        mSettingsManager.allowAppsMobileData(mAppsFiltered, checked);
+
+        notifyDataSetChanged();
+    }
+
+    public void allowAllVPNData(boolean checked) {
+        mSettingsManager.allowAppsVPNData(mAppsFiltered, checked);
+
+        notifyDataSetChanged();
+    }
+
+    public boolean isAllBackgroundDataBlocked() {
+        return mSettingsManager.isAppsBackgroundDataBlocked(mAppsFiltered);
+    }
+
+    public boolean isAllWIFIDataBlocked() {
+        return  mSettingsManager.isAppsWIFIDataBlocked(mAppsFiltered);
+    }
+
+    public boolean isAllMobileDataBlocked() {
+        return mSettingsManager.isAppsMobileDataBlocked(mAppsFiltered);
+    }
+
+    public boolean isAllVPNDataBlocked() {
+        return mSettingsManager.isAppsVPNDataBlocked(mAppsFiltered);
     }
 
     private List<ApplicationInfo> removeNullLabelApps(List<ApplicationInfo> list) {
@@ -283,9 +331,10 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         private PackageManager mPackageManager;
         private SettingsManager mSettingsManager;
         private LinearLayout mLinearLayout, mAccordion;
-        private SwitchCompat mMainToggle, mBackgroundToggle, mWifiToggle, mMobileToggle, mVpnToggle;
+        private SwitchCompat mMainToggle, mBackgroundToggle, mWifiToggle, mMobileToggle, mVpnToggle, mClrTextToggle;
         private TextView appName, header, settingStatus;
         private ImageView appIcon, accordionIcon;
+        private boolean mPrivateDNSEnabled;
 
         private ApplicationInfo app;
 
@@ -296,11 +345,15 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
             mPackageManager = packageManager;
             mSettingsManager = settingsManager;
 
+            //check if Private DNS is enabled to grey out app cleartext toggles
+            mPrivateDNSEnabled = mSettingsManager.isPrivateDNSEnabled();
+
             mMainToggle = itemView.findViewById(R.id.main_toggle);
             mBackgroundToggle = itemView.findViewById(R.id.app_allow_background_toggle);
             mWifiToggle = itemView.findViewById(R.id.app_allow_wifi_toggle);
             mMobileToggle = itemView.findViewById(R.id.app_allow_mobile_toggle);
             mVpnToggle = itemView.findViewById(R.id.app_allow_vpn_toggle);
+            mClrTextToggle = itemView.findViewById(R.id.app_allow_cleartext_toggle);
 
             appName = itemView.findViewById(R.id.app_name);
             settingStatus = itemView.findViewById(R.id.setting_status);
@@ -320,6 +373,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
             mWifiToggle.setOnClickListener(this);
             mMobileToggle.setOnClickListener(this);
             mVpnToggle.setOnClickListener(this);
+            mClrTextToggle.setOnClickListener(this);
 
             //set check changed here for status text updates
             mMainToggle.setOnCheckedChangeListener(this);
@@ -327,6 +381,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
             mWifiToggle.setOnCheckedChangeListener(this);
             mMobileToggle.setOnCheckedChangeListener(this);
             mVpnToggle.setOnCheckedChangeListener(this);
+            mClrTextToggle.setOnCheckedChangeListener(this);
         }
 
         public void bind(ApplicationInfo app) {
@@ -373,6 +428,19 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
 
                 //initialize main toggle
                 mMainToggle.setChecked(!mSettingsManager.getAppRestrictAll(app.uid));
+
+                //initialize cleartext toggle
+                if(mSettingsManager.isCleartextTrafficPermitted(app.packageName)) {
+                    mClrTextToggle.setEnabled(mSettingsManager.isCleartextBlocked());
+                    try {
+                        mClrTextToggle.setChecked(mSettingsManager.getAppRestrictCleartext(app.uid));
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    //disable permanently
+                    mClrTextToggle.setEnabled(false);
+                }
 
                 // Set status text
                 setStatusText();
@@ -438,10 +506,20 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
                             else
                                 mSettingsManager.setAppRestrictVpn(app.uid, true);
                             break;
+
+                        case R.id.app_allow_cleartext_toggle:
+                            mSettingsManager.allowAppCleartext(app.uid, mClrTextToggle.isChecked());
+                            break;
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Log.e(TAG, e.getMessage());
+                } catch (RemoteException remoteException) {
+                    remoteException.printStackTrace();
+                    Log.e(TAG, remoteException.getMessage());
+                    Toast.makeText(mContext, mContext.getString(R.string.error_setting_preference, appName.getText()), Toast.LENGTH_LONG).show();
+
+                    mClrTextToggle.setEnabled(false);
+                } catch (RuntimeException runtimeException) {
+                    runtimeException.printStackTrace();
+                    Log.e(TAG, runtimeException.getMessage());
 
                     //disable that app's toggles
                     mMainToggle.setEnabled(false);
@@ -449,6 +527,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
                     mWifiToggle.setEnabled(false);
                     mMobileToggle.setEnabled(false);
                     mVpnToggle.setEnabled(false);
+                    mClrTextToggle.setEnabled(false);
 
                     Toast.makeText(mContext, mContext.getString(R.string.error_setting_preference, appName.getText()), Toast.LENGTH_LONG).show();
                 }
@@ -462,8 +541,10 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.ViewHolder> impl
         }
 
         private void setStatusText() {
-            // Keep it as-is if all toggles are checkec
-            if (mMainToggle.isChecked() && mBackgroundToggle.isChecked() && mWifiToggle.isChecked() && mMobileToggle.isChecked() && mVpnToggle.isChecked()) {
+            // Keep it as-is if all toggles are checked, except cleartext where the default is not checked
+            if (mMainToggle.isChecked() && mBackgroundToggle.isChecked()
+                && mWifiToggle.isChecked() && mMobileToggle.isChecked()
+                && mVpnToggle.isChecked() && !mClrTextToggle.isChecked()) {
                 settingStatus.setVisibility(View.VISIBLE);
                 return;
             }

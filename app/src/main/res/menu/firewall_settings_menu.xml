@@ -7,14 +7,12 @@
         app:showAsAction="never"/>
 
     <item
-        android:id="@+id/action_settings"
-        android:title="@string/settings"
-        android:visible="false"
+        android:id="@+id/action_advanced"
+        android:title="@string/advanced"
         app:showAsAction="never"/>
 
     <item
         android:id="@+id/action_about"
         android:title="@string/about"
-        android:visible="false"
         app:showAsAction="never"/>
 </menu>
