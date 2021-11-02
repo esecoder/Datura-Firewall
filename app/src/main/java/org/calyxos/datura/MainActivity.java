@@ -1,21 +1,15 @@
 package org.calyxos.datura;
 
-import android.Manifest;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -25,6 +19,7 @@ import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.ConcatAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -32,8 +27,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.calyxos.datura.adapter.AppAdapter;
 import org.calyxos.datura.adapter.GlobalSettingsAdapter;
 import org.calyxos.datura.fragment.AboutDialogFragment;
-import org.calyxos.datura.service.DefaultConfigService;
-import org.calyxos.datura.util.Constants;
+import org.calyxos.datura.settings.SettingsManager;
 import org.calyxos.datura.util.Util;
 
 import java.util.ArrayList;
@@ -48,58 +42,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private GlobalSettingsAdapter mGlobalSettingsAdapter;
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
-    private ServiceConnection serviceConnection;
-    private DefaultConfigService configService;
 
+    private SwitchCompat mCleartextToggle;
+    private SettingsManager mSettingsManager;
     private static MainActivity mainActivity;
-
-
-    public void startDefaultConfigService() {
-        Log.d(TAG, "Service about to be started");
-        Intent serviceIntent = new Intent(MainActivity.this, DefaultConfigService.class);
-        //Service connection to bind the service to this context because of startForegroundService issues
-        serviceConnection = new ServiceConnection() {
-            @Override
-            public void onServiceConnected(ComponentName name, IBinder service) {
-                Log.d(TAG, "Service connected");
-                DefaultConfigService.ServiceBinder binder = (DefaultConfigService.ServiceBinder) service;
-                configService = binder.getService();
-                startForegroundService(serviceIntent);
-                configService.startForeground(Constants.DEFAULT_CONFIG_NOTIFICATION_ID, configService.getNotification());
-            }
-
-            @Override
-            public void onBindingDied(ComponentName name) {
-                Log.w(TAG, "Binding has dead.");
-            }
-
-            @Override
-            public void onNullBinding(ComponentName name) {
-                Log.w(TAG, "Bind was null.");
-            }
-
-            @Override
-            public void onServiceDisconnected(ComponentName name) {
-                Log.w(TAG, "Service is disconnected..");
-            }
-        };
-
-        try {
-            Log.d(TAG, "Service bound");
-            bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
-        } catch (RuntimeException ignored) {
-            Log.d(TAG, "Runtime exception");
-            //Use the normal way and accept it will fail sometimes
-            startForegroundService(serviceIntent);
-        }
-    }
-
-    public void stopDefaultConfigService() {
-        unbindService(serviceConnection);
-        if (configService != null)
-            configService.stopForeground(true);
-        stopService(new Intent(this, DefaultConfigService.class));
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -138,7 +84,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear = findViewById(R.id.search_clear);
         mSearchClear.setOnClickListener(this);
 
+        mCleartextToggle = findViewById(R.id.global_cleartext_toggle);
+        mCleartextToggle.setOnClickListener(this);
+
         mAppList = findViewById(R.id.app_list);
+
+        mSettingsManager = new SettingsManager(this);
 
         mainActivity = this;
     }
@@ -169,17 +120,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             // the framework code which handles setting the policies has a similar check.
             if (Util.isApp(ai.uid)) {
                 if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
-                    //filter out packages without internet access permissions
-                    if (pm.checkPermission(Manifest.permission.INTERNET, ai.packageName) == PackageManager.PERMISSION_GRANTED) {
-                        sysApps.add(ai);
-                    }
-                    //this method might be slower. Open to tests
-                    /*try {
-                        PackageInfo packageInfo = pm.getPackageInfo(ai.packageName, PackageManager.GET_META_DATA | PackageManager.GET_PERMISSIONS);
-                        if (packageInfo.requestedPermissions != null && hasInternetPermission(packageInfo.requestedPermissions)) {
-                            sysApps.add(ai);
-                        }
-                    } catch (PackageManager.NameNotFoundException ignored) {}*/
+                    sysApps.add(ai);
                 } else {
                     instApps.add(ai);
                 }
@@ -216,7 +157,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     //remove virtual keypad
                     //mSearchIcon.requestFocus();
-                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    InputMethodManager imm =(InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     imm.hideSoftInputFromWindow(mSearchIcon.getWindowToken(), 0);
                 } else
                     onBackPressed();
@@ -241,7 +182,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 break;
             }
-
+            
             case R.id.action_about: {
                 new AboutDialogFragment().show(getSupportFragmentManager(), AboutDialogFragment.TAG);
                 break;
@@ -277,14 +218,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
-    private boolean hasInternetPermission(String[] permissions) {
-        for (String s : permissions) {
-            if (s.equalsIgnoreCase(Manifest.permission.INTERNET))
-                return true;
-        }
-        return false;
-    }
-
     public static MainActivity getInstance() {
         return mainActivity;
     }
@@ -292,13 +225,5 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void notifyDataSetChanged() {
         if (mAppAdapter != null)
             mAppAdapter.notifyDataSetChanged(); //NOTE include this in a thread/service as well
-    }
-
-    public void serverServiceConnection() {
-        unbindService(serviceConnection);
-    }
-
-    public GlobalSettingsAdapter getGlobalSettingsAdapter() {
-        return mGlobalSettingsAdapter;
     }
 }
