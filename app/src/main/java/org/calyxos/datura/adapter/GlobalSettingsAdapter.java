@@ -18,9 +18,13 @@ import org.calyxos.datura.settings.SettingsManager;
 public class GlobalSettingsAdapter extends RecyclerView.Adapter<GlobalSettingsAdapter.ViewHolder> {
 
     private static final String TAG = GlobalSettingsAdapter.class.getSimpleName();
+    private final Context mContext;
+    private final PackageManager mPackageManager;
     private final SettingsManager mSettingsManager;
 
     public GlobalSettingsAdapter(Context context, PackageManager packageManager) {
+        mContext = context;
+        mPackageManager = packageManager;
         mSettingsManager = new SettingsManager(context);
     }
 
@@ -28,7 +32,7 @@ public class GlobalSettingsAdapter extends RecyclerView.Adapter<GlobalSettingsAd
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.fragment_global_settings, parent, false);
-        return new ViewHolder(view, mSettingsManager);
+        return new ViewHolder(view, mContext, mPackageManager, mSettingsManager);
     }
 
     @Override
@@ -41,27 +45,30 @@ public class GlobalSettingsAdapter extends RecyclerView.Adapter<GlobalSettingsAd
         return 1;
     }
 
-    public static class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener {
+    public static class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener{
 
-        private final SettingsManager mSettingsManager;
-        private final SwitchCompat mGlobalClrTextToggle;
+        private Context mContext;
+        private PackageManager mPackageManager;
+        private SettingsManager mSettingsManager;
+        private SwitchCompat mClrTextToggle;
 
-        public ViewHolder(@NonNull View itemView, SettingsManager settingsManager) {
+        public ViewHolder(@NonNull View itemView, Context context, PackageManager packageManager, SettingsManager settingsManager) {
             super(itemView);
 
+            mContext = context;
+            mPackageManager = packageManager;
             mSettingsManager = settingsManager;
 
-            mGlobalClrTextToggle = itemView.findViewById(R.id.global_cleartext_toggle);
-
+            mClrTextToggle = itemView.findViewById(R.id.global_cleartext_toggle);
 
             //check if Private DNS is enabled
-            mGlobalClrTextToggle.setEnabled(mSettingsManager.isPrivateDNSEnabled());
+            mClrTextToggle.setEnabled(mSettingsManager.isPrivateDNSEnabled());
             //initialize cleartext toggle state
-            mGlobalClrTextToggle.setChecked(mSettingsManager.isCleartextBlocked());
+            mClrTextToggle.setChecked(mSettingsManager.isCleartextBlocked());
 
             //set on click listeners instead of checked change for actual settings API calls because known issues
             //that comes with that
-            mGlobalClrTextToggle.setOnClickListener(this);
+            mClrTextToggle.setOnClickListener(this);
         }
 
         public void bind(ApplicationInfo app) {
@@ -70,8 +77,8 @@ public class GlobalSettingsAdapter extends RecyclerView.Adapter<GlobalSettingsAd
 
         @Override
         public void onClick(View v) {
-            if (v.equals(mGlobalClrTextToggle)) {
-                mSettingsManager.blockCleartextTraffic(mGlobalClrTextToggle.isChecked());
+            if (v.equals(mClrTextToggle)) {
+                mSettingsManager.blockCleartextTraffic(mClrTextToggle.isChecked());
                 //call a main activity function that refreshes the list of apps
                 MainActivity.getInstance().notifyDataSetChanged();
             }
