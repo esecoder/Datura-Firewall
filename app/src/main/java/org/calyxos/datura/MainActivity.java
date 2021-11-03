@@ -1,19 +1,18 @@
 package org.calyxos.datura;
 
-import android.content.ComponentName;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -23,7 +22,6 @@ import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.ConcatAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -31,8 +29,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.calyxos.datura.adapter.AppAdapter;
 import org.calyxos.datura.adapter.GlobalSettingsAdapter;
 import org.calyxos.datura.fragment.AboutDialogFragment;
-import org.calyxos.datura.service.DefaultConfigService;
-import org.calyxos.datura.settings.SettingsManager;
 import org.calyxos.datura.util.Constants;
 import org.calyxos.datura.util.Util;
 
@@ -48,46 +44,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private GlobalSettingsAdapter mGlobalSettingsAdapter;
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
+    private SharedPreferences sharedPreferences;
 
-    private SwitchCompat mCleartextToggle;
-    private SettingsManager mSettingsManager;
     private static MainActivity mainActivity;
-
-
-    public void startDefaultConfigService () {
-        //Service connection to bind the service to this context because of startForegroundService issues
-        new ServiceConnection() {
-            @Override
-            public void onServiceConnected(ComponentName name, IBinder service) {
-                DefaultConfigService.ServiceBinder binder = (DefaultConfigService.ServiceBinder) service;
-                DefaultConfigService configService = binder.getService();
-                startForegroundService(new Intent(MainActivity.this, DefaultConfigService.class));
-                configService.startForeground(Constants.DEFAULT_CONFIG_NOTIFICATION_ID, configService.getNotification());
-
-                // Release the connection to prevent leaks.
-                unbindService(this);
-            }
-
-            @Override
-            public void onBindingDied(ComponentName name) {
-                Log.w(TAG, "Binding has dead.");
-            }
-
-            @Override
-            public void onNullBinding(ComponentName name) {
-                Log.w(TAG, "Bind was null.");
-            }
-
-            @Override
-            public void onServiceDisconnected(ComponentName name) {
-                Log.w(TAG, "Service is disconnected..");
-            }
-        };
-    }
-
-    public void stopDefaultConfigService() {
-        stopService(new Intent(this, DefaultConfigService.class));
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -126,12 +85,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear = findViewById(R.id.search_clear);
         mSearchClear.setOnClickListener(this);
 
-        mCleartextToggle = findViewById(R.id.global_cleartext_toggle);
-        mCleartextToggle.setOnClickListener(this);
-
         mAppList = findViewById(R.id.app_list);
 
-        mSettingsManager = new SettingsManager(this);
+        sharedPreferences = getSharedPreferences(Constants.SORT_PREFERENCE, MODE_PRIVATE);
 
         mainActivity = this;
     }
@@ -153,6 +109,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             packages.addAll(pm.getInstalledApplicationsAsUser(PackageManager.GET_META_DATA, user.id));
         }
 
+        //filter out packages without internet access permissions
+        List<ApplicationInfo> internetPackages = new ArrayList<>();
+        for (ApplicationInfo applicationInfo : packages) {
+            if (isSystemApp(applicationInfo)) {
+                try {
+                    PackageInfo packageInfo = pm.getPackageInfo(applicationInfo.packageName, PackageManager.GET_META_DATA | PackageManager.GET_PERMISSIONS);
+                    if (packageInfo.requestedPermissions != null && hasInternetPermission(packageInfo.requestedPermissions)) {
+                        internetPackages.add(applicationInfo);
+                    }
+                } catch (PackageManager.NameNotFoundException ignored) {
+                }
+            }
+        }
+
+        packages = internetPackages;
+
         //filter system and installed apps
         List<ApplicationInfo> sysApps = new ArrayList<>();
         List<ApplicationInfo> instApps = new ArrayList<>();
@@ -161,7 +133,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             // Skip anything that isn't an "app" since we can't set policies for those, as
             // the framework code which handles setting the policies has a similar check.
             if (Util.isApp(ai.uid)) {
-                if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+                if (isSystemApp(ai)) {
                     sysApps.add(ai);
                 } else {
                     instApps.add(ai);
@@ -181,6 +153,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.firewall_settings_menu, menu);
+
+        //initialize sort by name menu item
+        MenuItem sortItem = menu.findItem(R.id.action_sort);
+        String sort = sharedPreferences.getString(Constants.SORT_BY, Constants.NAME);
+        if (sort.equals(Constants.NAME)) {
+            mAppAdapter.sortListByName();
+            sortItem.setTitle(getString(R.string.sort_by_last_used));
+        } else {
+            mAppAdapter.sortListByLastUsed();
+            sortItem.setTitle(getString(R.string.sort_by_name));
+        }
+
         return true;
     }
 
@@ -199,7 +183,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     //remove virtual keypad
                     //mSearchIcon.requestFocus();
-                    InputMethodManager imm =(InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     imm.hideSoftInputFromWindow(mSearchIcon.getWindowToken(), 0);
                 } else
                     onBackPressed();
@@ -207,24 +191,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
 
             case R.id.action_sort: {
+                SharedPreferences.Editor editor = sharedPreferences.edit();
                 if (item.getTitle().equals(getString(R.string.sort_by_name))) {
                     //Check and call a different sort function for search result list
                     if (mSearchBar.getVisibility() == View.VISIBLE && !mSearchBar.getText().toString().isEmpty())
                         mAppAdapter.sortResultListByName();
-                    else mAppAdapter.sortListByName();
+                    else {
+                        mAppAdapter.sortListByName();
+                        editor.putString(Constants.SORT_BY, Constants.NAME).apply();
+                    }
 
                     item.setTitle(getString(R.string.sort_by_last_used));
                 } else {
                     if (mSearchBar.getVisibility() == View.VISIBLE && !mSearchBar.getText().toString().isEmpty())
                         mAppAdapter.sortResultListByLastUsed();
-                    else mAppAdapter.sortListByLastUsed();
+                    else {
+                        mAppAdapter.sortListByLastUsed();
+                        editor.putString(Constants.SORT_BY, Constants.LAST_USED).apply();
+                    }
 
                     item.setTitle(getString(R.string.sort_by_name));
                 }
 
                 break;
             }
-            
+
             case R.id.action_about: {
                 new AboutDialogFragment().show(getSupportFragmentManager(), AboutDialogFragment.TAG);
                 break;
@@ -260,6 +251,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+    private boolean isSystemApp(ApplicationInfo ai) {
+        return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+    }
+
+    private boolean hasInternetPermission(String[] permissions) {
+        for (String s : permissions) {
+            if (s.equalsIgnoreCase(Manifest.permission.INTERNET))
+                return true;
+        }
+        return false;
+    }
+
     public static MainActivity getInstance() {
         return mainActivity;
     }
@@ -267,5 +270,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void notifyDataSetChanged() {
         if (mAppAdapter != null)
             mAppAdapter.notifyDataSetChanged(); //NOTE include this in a thread/service as well
+    }
+
+    public GlobalSettingsAdapter getGlobalSettingsAdapter() {
+        return mGlobalSettingsAdapter;
     }
 }

@@ -10,16 +10,16 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:layout_marginStart="7dp"
-        android:layout_gravity="start"
         android:layout_marginEnd="15dp"
-        android:text="@string/allow_wifi_data"
+        android:text="@string/allow_all_network"
+        android:layout_gravity="start"
         android:textSize="15sp" />
 
     <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/app_allow_wifi_toggle"
+        android:id="@+id/def_conf_all_network_toggle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"
-        android:checked="true" />
+        android:checked="true"/>
 
 </LinearLayout>

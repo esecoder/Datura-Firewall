@@ -11,11 +11,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Binder;
 import android.os.IBinder;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
+import org.calyxos.datura.GlobalSettingsActivity;
 import org.calyxos.datura.MainActivity;
 import org.calyxos.datura.NewPackageInstallReceiver;
 import org.calyxos.datura.R;
@@ -25,7 +27,10 @@ import static android.app.Notification.EXTRA_NOTIFICATION_ID;
 
 public class DefaultConfigService extends Service {
 
-    NewPackageInstallReceiver newPackageInstallReceiver;
+    private static final String TAG = DefaultConfigService.class.getSimpleName();
+    private NewPackageInstallReceiver newPackageInstallReceiver;
+    private StopActionReceiver stopActionReceiver;
+    private static DefaultConfigService instance;
 
     public class ServiceBinder extends Binder {
         public DefaultConfigService getService() {
@@ -36,6 +41,7 @@ public class DefaultConfigService extends Service {
     private final ServiceBinder binder = new ServiceBinder();
 
     public Notification getNotification() {
+        Log.d(TAG, "Notification creation started");
         createNotificationChannel();
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
@@ -52,6 +58,10 @@ public class DefaultConfigService extends Service {
         Notification notification = builder.build();
         NotificationManagerCompat notificationManager = NotificationManagerCompat.from(this);
         notificationManager.notify(Constants.DEFAULT_CONFIG_NOTIFICATION_ID, notification);
+
+
+
+        Log.d(TAG, "Notification finished and showing");
 
         return notification;
     }
@@ -74,24 +84,39 @@ public class DefaultConfigService extends Service {
     }
 
     private PendingIntent getStopActionPendingIntent() {
-        Intent stopIntent = new Intent(this, DefaultConfigService.DismissActionReceiver.class);
+        Log.d(TAG, "Stop pending intent creation started");
+        Intent stopIntent = new Intent(this, StopActionReceiver.class);
         stopIntent.setAction(Constants.ACTION_STOP);
         stopIntent.putExtra(EXTRA_NOTIFICATION_ID, Constants.DEFAULT_CONFIG_NOTIFICATION_ID);
-        return PendingIntent.getBroadcast(this, 0, stopIntent, 0);
+        stopIntent.setClass(this, StopActionReceiver.class);
+        return PendingIntent.getBroadcast(this, 12, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     public void stopService() {
+        Log.d(TAG, "Stop service called");
         stopSelf();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        Log.d(TAG, "onCreate called");
         newPackageInstallReceiver = new NewPackageInstallReceiver();
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
         intentFilter.addDataScheme("package");
         registerReceiver(newPackageInstallReceiver, intentFilter);
+
+        stopActionReceiver = new StopActionReceiver();
+        IntentFilter stopIntentFilter = new IntentFilter();
+        stopIntentFilter.addAction(Constants.ACTION_STOP);
+        registerReceiver(stopActionReceiver, stopIntentFilter);
+
+        instance = this;
+    }
+
+    public static DefaultConfigService getInstance() {
+        return instance;
     }
 
     @Nullable
@@ -103,21 +128,42 @@ public class DefaultConfigService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        Log.d(TAG, "onDestroy called");
         if (newPackageInstallReceiver != null)
             unregisterReceiver(newPackageInstallReceiver);
+
+        if (stopActionReceiver != null)
+            unregisterReceiver(stopActionReceiver);
+
         stopForeground(true);
     }
 
-    class DismissActionReceiver extends BroadcastReceiver {
+    public static class StopActionReceiver extends BroadcastReceiver {
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.d(TAG, "Stop action receiver started");
             String action = intent.getAction();
+            Log.d(TAG, "Action: " + action);
             if (action.equals(Constants.ACTION_STOP)) {
                 int notificationId = intent.getExtras().getInt(EXTRA_NOTIFICATION_ID);
-                NotificationManagerCompat notificationManager = NotificationManagerCompat.from(DefaultConfigService.this);
-                notificationManager.cancel(notificationId);
-                stopService();
+                Log.d(TAG, "Extra Noti Id: " + notificationId);
+                NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
+                notificationManager.cancel(null, notificationId);
+
+                GlobalSettingsActivity globalSettingsActivity = GlobalSettingsActivity.getInstance();
+                DefaultConfigService defaultConfigService = DefaultConfigService.getInstance();
+                defaultConfigService.stopForeground(true);
+
+                //update the activity to show default config service has been killed
+                if (globalSettingsActivity != null) {
+                    globalSettingsActivity.serverServiceConnection();
+                    globalSettingsActivity.updateToggle();
+                }
+
+                defaultConfigService.stopService();
+
+                Log.d(TAG, "Stop action receiver ended");
             }
         }
     }
