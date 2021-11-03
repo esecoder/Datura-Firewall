@@ -1,18 +1,21 @@
 package org.calyxos.datura;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.content.ServiceConnection;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -29,6 +32,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.calyxos.datura.adapter.AppAdapter;
 import org.calyxos.datura.adapter.GlobalSettingsAdapter;
 import org.calyxos.datura.fragment.AboutDialogFragment;
+import org.calyxos.datura.service.DefaultConfigService;
 import org.calyxos.datura.util.Constants;
 import org.calyxos.datura.util.Util;
 
@@ -44,7 +48,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private GlobalSettingsAdapter mGlobalSettingsAdapter;
     private EditText mSearchBar;
     private ImageView mSearchIcon, mSearchClear;
-    private SharedPreferences sharedPreferences;
 
     private static MainActivity mainActivity;
 
@@ -86,8 +89,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mSearchClear.setOnClickListener(this);
 
         mAppList = findViewById(R.id.app_list);
-
-        sharedPreferences = getSharedPreferences(Constants.SORT_PREFERENCE, MODE_PRIVATE);
 
         mainActivity = this;
     }
@@ -153,18 +154,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.firewall_settings_menu, menu);
-
-        //initialize sort by name menu item
-        MenuItem sortItem = menu.findItem(R.id.action_sort);
-        String sort = sharedPreferences.getString(Constants.SORT_BY, Constants.NAME);
-        if (sort.equals(Constants.NAME)) {
-            mAppAdapter.sortListByName();
-            sortItem.setTitle(getString(R.string.sort_by_last_used));
-        } else {
-            mAppAdapter.sortListByLastUsed();
-            sortItem.setTitle(getString(R.string.sort_by_name));
-        }
-
         return true;
     }
 
@@ -191,24 +180,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
 
             case R.id.action_sort: {
-                SharedPreferences.Editor editor = sharedPreferences.edit();
                 if (item.getTitle().equals(getString(R.string.sort_by_name))) {
                     //Check and call a different sort function for search result list
                     if (mSearchBar.getVisibility() == View.VISIBLE && !mSearchBar.getText().toString().isEmpty())
                         mAppAdapter.sortResultListByName();
-                    else {
-                        mAppAdapter.sortListByName();
-                        editor.putString(Constants.SORT_BY, Constants.NAME).apply();
-                    }
+                    else mAppAdapter.sortListByName();
 
                     item.setTitle(getString(R.string.sort_by_last_used));
                 } else {
                     if (mSearchBar.getVisibility() == View.VISIBLE && !mSearchBar.getText().toString().isEmpty())
                         mAppAdapter.sortResultListByLastUsed();
-                    else {
-                        mAppAdapter.sortListByLastUsed();
-                        editor.putString(Constants.SORT_BY, Constants.LAST_USED).apply();
-                    }
+                    else mAppAdapter.sortListByLastUsed();
 
                     item.setTitle(getString(R.string.sort_by_name));
                 }
